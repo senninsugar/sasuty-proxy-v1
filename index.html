@@ -22,17 +22,11 @@
         /* ツールバー */
         .toolbar { padding: 12px; display: flex; gap: 8px; border-bottom: 1px solid #eee; background: #ffffff; }
         .url-bar { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; }
-        .url-bar:focus { border-color: #333; }
         .go-btn { padding: 8px 16px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
         
-        /* ホーム画面とローディング */
-        .home-screen { padding: 60px 20px; text-align: center; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .home-screen h2 { margin-bottom: 24px; font-weight: 700; }
-        .bookmarks { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-        .bookmark-item { padding: 10px 20px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; transition: background 0.2s; }
-        .bookmark-item:hover { background: #eee; }
-        
-        .loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid #333; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        /* ローディング */
+        .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #333; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         iframe { flex: 1; border: none; width: 100%; }
@@ -55,18 +49,27 @@
 
     const connection = new BareMux.BareMuxConnection("/prxy/baremux/worker.js");
     const wispServers = [
-        "wss://wisp.rhw.one/",     
-        "wss://wisp.webmc.fun/",
-        "wss://anura.pro/",
-        "wss://server.rubynetwork.co/wisp/",
-        "wss://wisp.mercurywork.shop/",    
-        "wss://wisp.43059.lrga.space/",
-        "wss://wisp.lrga.space/",
-        "wss://wisp.artclass-eta.vercel.app/",
-        "wss://wisp.gointerstellar.app/",
-        "wss://construction.services.codd70.ru/socket/",            
-        "wss://tomp.app/wisp/"
+        "wss://wisp.rhw.one/", "wss://wisp.webmc.fun/", "wss://anura.pro/",
+        "wss://server.rubynetwork.co/wisp/", "wss://wisp.mercurywork.shop/",
+        "wss://wisp.lrga.space/", "wss://wisp.gointerstellar.app/", "wss://tomp.app/wisp/"
     ];
+    let activeWispUrl = null;
+
+    async function getAvailableWisp() {
+        if (activeWispUrl) return activeWispUrl;
+        for (const url of wispServers) {
+            try {
+                const ws = new WebSocket(url);
+                await new Promise((res, rej) => {
+                    ws.onopen = res; ws.onerror = rej; setTimeout(rej, 2000);
+                });
+                ws.close();
+                activeWispUrl = url;
+                return url;
+            } catch (e) { continue; }
+        }
+        throw new Error("No nodes available");
+    }
 
     window.createTab = function() {
         const id = Date.now();
@@ -84,16 +87,11 @@
         view.id = `view-${id}`;
         view.innerHTML = `
             <div class="toolbar">
-                <input type="text" class="url-bar" placeholder="URLを入力または検索...">
+                <input type="text" class="url-bar" placeholder="URLを入力...">
                 <button class="go-btn" onclick="loadProxy(${id})">移動</button>
             </div>
-            <div class="home-screen">
-                <h2>Sasuty Proxy v1</h2>
-                <div class="bookmarks">
-                    <div class="bookmark-item" onclick="quickLoad(${id}, 'https://google.com')">Google</div>
-                    <div class="bookmark-item" onclick="quickLoad(${id}, 'https://youtube.com')">YouTube</div>
-                    <div class="bookmark-item" onclick="quickLoad(${id}, 'https://github.com')">GitHub</div>
-                </div>
+            <div class="loading-overlay" style="display:none">
+                <div class="spinner"></div><p>接続中...</p>
             </div>
             <iframe style="display:none"></iframe>
         `;
@@ -101,58 +99,34 @@
         document.getElementById('browser-container').appendChild(view);
     }
 
-    window.switchTab = function(id) {
+    window.loadProxy = async function(id) {
+        const view = document.getElementById(`view-${id}`);
+        const input = view.querySelector('.url-bar').value;
+        const iframe = view.querySelector('iframe');
+        const loader = view.querySelector('.loading-overlay');
+
+        loader.style.display = 'flex';
+        await registerSW();
+        
+        const wispUrl = await getAvailableWisp();
+        await connection.setTransport("/prxy/epoxy/index.mjs", [{ wisp: wispUrl }]);
+
+        const url = input.startsWith('http') ? input : 'https://google.com/search?q=' + encodeURIComponent(input);
+        iframe.src = __uv$config.prefix + __uv$config.encodeUrl(url);
+        
+        iframe.onload = () => { loader.style.display = 'none'; iframe.style.display = 'block'; };
+    }
+
+    window.switchTab = (id) => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         document.getElementById(`tab-${id}`).classList.add('active');
         document.getElementById(`view-${id}`).classList.add('active');
     }
 
-    window.removeTab = function(id) {
-        const tab = document.getElementById(`tab-${id}`);
-        const view = document.getElementById(`view-${id}`);
-        if (document.querySelectorAll('.tab').length > 1) {
-            tab.remove();
-            view.remove();
-            if (tab.classList.contains('active')) {
-                const tabs = document.querySelectorAll('.tab');
-                switchTab(tabs[tabs.length - 1].id.replace('tab-', ''));
-            }
-        }
-    }
-
-    window.quickLoad = function(id, url) {
-        document.getElementById(`view-${id}`).querySelector('.url-bar').value = url;
-        loadProxy(id);
-    }
-
-    window.loadProxy = async function(id) {
-        const view = document.getElementById(`view-${id}`);
-        const input = view.querySelector('.url-bar').value;
-        const iframe = view.querySelector('iframe');
-        const home = view.querySelector('.home-screen');
-
-        home.innerHTML = '<div class="loading-spinner"></div><p>接続中...</p>';
-        home.style.display = 'flex';
-        iframe.style.display = 'none';
-
-        try {
-            await registerSW();
-            const wispUrl = wispServers[Math.floor(Math.random() * wispServers.length)];
-            await connection.setTransport("/prxy/epoxy/index.mjs", [{ wisp: wispUrl }]);
-
-            const url = input.startsWith('http') ? input : 'https://google.com/search?q=' + encodeURIComponent(input);
-            iframe.src = __uv$config.prefix + __uv$config.encodeUrl(url);
-            
-            iframe.onload = () => {
-                home.style.display = 'none';
-                iframe.style.display = 'block';
-                const tab = document.getElementById(`tab-${id}`);
-                tab.querySelector('span').textContent = new URL(url).hostname;
-            };
-        } catch (err) {
-            home.innerHTML = `<h2>エラー</h2><p>${err.message}</p>`;
-        }
+    window.removeTab = (id) => {
+        document.getElementById(`tab-${id}`).remove();
+        document.getElementById(`view-${id}`).remove();
     }
 
     createTab();
