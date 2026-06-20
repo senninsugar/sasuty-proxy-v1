@@ -25,12 +25,15 @@
         .url-bar:focus { border-color: #333; }
         .go-btn { padding: 8px 16px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
         
-        /* ホーム画面 */
+        /* ホーム画面とローディング */
         .home-screen { padding: 60px 20px; text-align: center; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .home-screen h2 { margin-bottom: 24px; font-weight: 700; }
         .bookmarks { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
         .bookmark-item { padding: 10px 20px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; transition: background 0.2s; }
         .bookmark-item:hover { background: #eee; }
+        
+        .loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid #333; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         iframe { flex: 1; border: none; width: 100%; }
     </style>
@@ -51,6 +54,19 @@
     import * as BareMux from "/prxy/baremux/index.mjs";
 
     const connection = new BareMux.BareMuxConnection("/prxy/baremux/worker.js");
+    const wispServers = [
+        "wss://wisp.rhw.one/",     
+        "wss://wisp.webmc.fun/",
+        "wss://anura.pro/",
+        "wss://server.rubynetwork.co/wisp/",
+        "wss://wisp.mercurywork.shop/",    
+        "wss://wisp.43059.lrga.space/",
+        "wss://wisp.lrga.space/",
+        "wss://wisp.artclass-eta.vercel.app/",
+        "wss://wisp.gointerstellar.app/",
+        "wss://construction.services.codd70.ru/socket/",            
+        "wss://tomp.app/wisp/"
+    ];
 
     window.createTab = function() {
         const id = Date.now();
@@ -98,9 +114,9 @@
         if (document.querySelectorAll('.tab').length > 1) {
             tab.remove();
             view.remove();
-            if (document.getElementById(`tab-${id}`)?.classList.contains('active')) {
-                const remainingTabs = document.querySelectorAll('.tab');
-                switchTab(remainingTabs[remainingTabs.length - 1].id.replace('tab-', ''));
+            if (tab.classList.contains('active')) {
+                const tabs = document.querySelectorAll('.tab');
+                switchTab(tabs[tabs.length - 1].id.replace('tab-', ''));
             }
         }
     }
@@ -116,21 +132,29 @@
         const iframe = view.querySelector('iframe');
         const home = view.querySelector('.home-screen');
 
-        await registerSW();
-        
-        if (typeof __uv$config === 'undefined') { alert("Proxy設定が未ロードです"); return; }
+        home.innerHTML = '<div class="loading-spinner"></div><p>接続中...</p>';
+        home.style.display = 'flex';
+        iframe.style.display = 'none';
 
-        const url = input.startsWith('http') ? input : 'https://google.com/search?q=' + encodeURIComponent(input);
-        iframe.src = __uv$config.prefix + __uv$config.encodeUrl(url);
-        
-        home.style.display = 'none';
-        iframe.style.display = 'block';
-        
-        const tab = document.getElementById(`tab-${id}`);
-        tab.querySelector('span').textContent = new URL(url).hostname;
+        try {
+            await registerSW();
+            const wispUrl = wispServers[Math.floor(Math.random() * wispServers.length)];
+            await connection.setTransport("/prxy/epoxy/index.mjs", [{ wisp: wispUrl }]);
+
+            const url = input.startsWith('http') ? input : 'https://google.com/search?q=' + encodeURIComponent(input);
+            iframe.src = __uv$config.prefix + __uv$config.encodeUrl(url);
+            
+            iframe.onload = () => {
+                home.style.display = 'none';
+                iframe.style.display = 'block';
+                const tab = document.getElementById(`tab-${id}`);
+                tab.querySelector('span').textContent = new URL(url).hostname;
+            };
+        } catch (err) {
+            home.innerHTML = `<h2>エラー</h2><p>${err.message}</p>`;
+        }
     }
 
-    // 初期化
     createTab();
 </script>
 </body>
