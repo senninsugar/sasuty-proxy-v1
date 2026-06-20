@@ -5,39 +5,31 @@
     <title>Sasuty Proxy v1</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; background: #ffffff; color: #333; }
+        body { font-family: 'Inter', sans-serif; height: 100vh; display: flex; flex-direction: column; background: #020205; color: #ffffff; overflow: hidden; }
         
         /* タブバー */
-        #tab-bar { display: flex; background: #f8f9fa; padding: 8px 8px 0 8px; gap: 4px; border-bottom: 1px solid #ddd; overflow-x: auto; }
-        .tab { padding: 8px 16px; background: #e9ecef; border-radius: 8px 8px 0 0; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 120px; justify-content: space-between; }
-        .tab.active { background: #ffffff; border: 1px solid #ddd; border-bottom: none; font-weight: 600; }
-        .tab button { border: none; background: none; cursor: pointer; color: #666; font-size: 16px; line-height: 1; }
-        #add-tab { padding: 4px 12px; cursor: pointer; background: none; border: 1px solid #ddd; border-radius: 8px 8px 0 0; font-size: 18px; color: #333; }
+        #tab-bar { display: flex; background: rgba(5, 5, 10, 0.95); padding: 8px 8px 0 8px; gap: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); overflow-x: auto; }
+        .tab { min-width: 140px; height: 36px; background: rgba(255,255,255,0.03); border-radius: 8px 8px 0 0; display: flex; align-items: center; padding: 0 12px; cursor: pointer; border: 1px solid transparent; border-bottom: none; font-size: 0.8rem; }
+        .tab.active { background: rgba(30, 30, 45, 0.8); border: 1px solid rgba(139, 92, 246, 0.3); border-bottom: none; }
+        .tab-close { margin-left: auto; opacity: 0.5; }
+        .new-tab-btn { background: none; border: none; color: white; padding: 0 10px; cursor: pointer; }
 
-        /* ブラウザ領域 */
-        #browser-container { flex: 1; position: relative; display: flex; flex-direction: column; }
+        /* ブラウザ */
+        #browser-container { flex: 1; position: relative; }
         .view { width: 100%; height: 100%; display: none; flex-direction: column; }
         .view.active { display: flex; }
         
-        /* ツールバー */
-        .toolbar { padding: 12px; display: flex; gap: 8px; border-bottom: 1px solid #eee; background: #ffffff; }
-        .url-bar { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; }
-        .go-btn { padding: 8px 16px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        .toolbar { padding: 12px; display: flex; gap: 8px; background: rgba(10, 10, 15, 0.8); align-items: center; }
+        .url-bar { flex: 1; height: 38px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 19px; padding: 0 20px; color: white; }
         
-        /* ローディング */
-        .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #333; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        iframe { flex: 1; border: none; width: 100%; }
+        iframe { flex: 1; border: none; background: white; }
     </style>
 </head>
 <body>
 
-<div id="tab-bar">
-    <div id="tabs-container" style="display:flex; gap:4px;"></div>
-    <button id="add-tab" onclick="createTab()">+</button>
-</div>
+<header id="tab-bar">
+    <button class="new-tab-btn" onclick="createTab()">+</button>
+</header>
 
 <div id="browser-container"></div>
 
@@ -53,22 +45,21 @@
         "wss://server.rubynetwork.co/wisp/", "wss://wisp.mercurywork.shop/",
         "wss://wisp.lrga.space/", "wss://wisp.gointerstellar.app/", "wss://tomp.app/wisp/"
     ];
-    let activeWispUrl = null;
+
+    async function checkWisp(url) {
+        return new Promise((res) => {
+            const ws = new WebSocket(url);
+            const timer = setTimeout(() => { ws.close(); res(false); }, 3000);
+            ws.onopen = () => { clearTimeout(timer); ws.close(); res(true); };
+            ws.onerror = () => { clearTimeout(timer); res(false); };
+        });
+    }
 
     async function getAvailableWisp() {
-        if (activeWispUrl) return activeWispUrl;
         for (const url of wispServers) {
-            try {
-                const ws = new WebSocket(url);
-                await new Promise((res, rej) => {
-                    ws.onopen = res; ws.onerror = rej; setTimeout(rej, 2000);
-                });
-                ws.close();
-                activeWispUrl = url;
-                return url;
-            } catch (e) { continue; }
+            if (await checkWisp(url)) return url;
         }
-        throw new Error("No nodes available");
+        throw new Error("No nodes available.");
     }
 
     window.createTab = function() {
@@ -76,11 +67,11 @@
         const tabEl = document.createElement('div');
         tabEl.className = 'tab active';
         tabEl.id = `tab-${id}`;
-        tabEl.innerHTML = `<span>新規タブ</span><button onclick="event.stopPropagation(); removeTab(${id})">×</button>`;
+        tabEl.innerHTML = `<span>新規タブ</span><span class="tab-close" onclick="event.stopPropagation(); removeTab(${id})">×</span>`;
         tabEl.onclick = () => switchTab(id);
         
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.getElementById('tabs-container').appendChild(tabEl);
+        document.getElementById('tab-bar').insertBefore(tabEl, document.querySelector('.new-tab-btn'));
         
         const view = document.createElement('div');
         view.className = 'view active';
@@ -88,10 +79,7 @@
         view.innerHTML = `
             <div class="toolbar">
                 <input type="text" class="url-bar" placeholder="URLを入力...">
-                <button class="go-btn" onclick="loadProxy(${id})">移動</button>
-            </div>
-            <div class="loading-overlay" style="display:none">
-                <div class="spinner"></div><p>接続中...</p>
+                <button onclick="loadProxy(${id})">移動</button>
             </div>
             <iframe style="display:none"></iframe>
         `;
@@ -103,18 +91,15 @@
         const view = document.getElementById(`view-${id}`);
         const input = view.querySelector('.url-bar').value;
         const iframe = view.querySelector('iframe');
-        const loader = view.querySelector('.loading-overlay');
 
-        loader.style.display = 'flex';
         await registerSW();
-        
         const wispUrl = await getAvailableWisp();
         await connection.setTransport("/prxy/epoxy/index.mjs", [{ wisp: wispUrl }]);
 
         const url = input.startsWith('http') ? input : 'https://google.com/search?q=' + encodeURIComponent(input);
         iframe.src = __uv$config.prefix + __uv$config.encodeUrl(url);
-        
-        iframe.onload = () => { loader.style.display = 'none'; iframe.style.display = 'block'; };
+        iframe.style.display = 'block';
+        view.querySelector('span').textContent = new URL(url).hostname;
     }
 
     window.switchTab = (id) => {
