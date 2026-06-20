@@ -5,110 +5,132 @@
     <title>Sasuty Proxy v1</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; background: #f4f4f9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; background: #ffffff; color: #333; }
         
-        /* Tab Bar */
-        #tab-bar { display: flex; background: #e0e0e0; padding: 5px 5px 0 5px; gap: 5px; }
-        .tab { padding: 8px 15px; background: #fff; border-radius: 5px 5px 0 0; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; }
-        .tab.active { background: #f4f4f9; font-weight: bold; }
-        .tab button { border: none; background: none; cursor: pointer; color: #888; }
-        #add-tab { padding: 8px 15px; cursor: pointer; background: #ddd; border-radius: 5px 5px 0 0; border: none; }
+        /* タブバー */
+        #tab-bar { display: flex; background: #f8f9fa; padding: 8px 8px 0 8px; gap: 4px; border-bottom: 1px solid #ddd; overflow-x: auto; }
+        .tab { padding: 8px 16px; background: #e9ecef; border-radius: 8px 8px 0 0; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 120px; justify-content: space-between; }
+        .tab.active { background: #ffffff; border: 1px solid #ddd; border-bottom: none; font-weight: 600; }
+        .tab button { border: none; background: none; cursor: pointer; color: #666; font-size: 16px; line-height: 1; }
+        #add-tab { padding: 4px 12px; cursor: pointer; background: none; border: 1px solid #ddd; border-radius: 8px 8px 0 0; font-size: 18px; color: #333; }
 
-        /* Browser Area */
-        #browser-container { flex: 1; position: relative; background: #fff; }
+        /* ブラウザ領域 */
+        #browser-container { flex: 1; position: relative; display: flex; flex-direction: column; }
         .view { width: 100%; height: 100%; display: none; flex-direction: column; }
         .view.active { display: flex; }
         
-        /* Toolbar */
-        .toolbar { padding: 10px; display: flex; gap: 10px; border-bottom: 1px solid #ddd; }
-        .url-bar { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        /* ツールバー */
+        .toolbar { padding: 12px; display: flex; gap: 8px; border-bottom: 1px solid #eee; background: #ffffff; }
+        .url-bar { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; }
+        .url-bar:focus { border-color: #333; }
+        .go-btn { padding: 8px 16px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
         
-        /* Home Screen */
-        .home-screen { padding: 40px; text-align: center; }
-        .bookmarks { margin-top: 20px; display: flex; gap: 10px; justify-content: center; }
-        .bookmark-item { padding: 10px 20px; background: #eee; border-radius: 20px; cursor: pointer; }
+        /* ホーム画面 */
+        .home-screen { padding: 60px 20px; text-align: center; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .home-screen h2 { margin-bottom: 24px; font-weight: 700; }
+        .bookmarks { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+        .bookmark-item { padding: 10px 20px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; transition: background 0.2s; }
+        .bookmark-item:hover { background: #eee; }
         
-        iframe { flex: 1; border: none; }
+        iframe { flex: 1; border: none; width: 100%; }
     </style>
 </head>
 <body>
 
 <div id="tab-bar">
-    <div id="tabs-container" style="display:flex; gap:5px;"></div>
-    <button id="add-tab">+</button>
+    <div id="tabs-container" style="display:flex; gap:4px;"></div>
+    <button id="add-tab" onclick="createTab()">+</button>
 </div>
 
 <div id="browser-container"></div>
 
-<script>
-    let tabs = [];
-    let activeTabId = null;
+<script src="uv/uv.bundle.js"></script>
+<script src="uv/uv.config.js"></script>
+<script type="module">
+    import { registerSW } from "/prxy/register-sw.mjs";
+    import * as BareMux from "/prxy/baremux/index.mjs";
 
-    const container = document.getElementById('browser-container');
-    const tabsContainer = document.getElementById('tabs-container');
+    const connection = new BareMux.BareMuxConnection("/prxy/baremux/worker.js");
 
-    function createTab() {
+    window.createTab = function() {
         const id = Date.now();
-        tabs.push({ id, url: '' });
-        
-        // Tab UI
         const tabEl = document.createElement('div');
-        tabEl.className = 'tab';
-        tabEl.innerHTML = `<span>New Tab</span><button onclick="removeTab(${id})">x</button>`;
+        tabEl.className = 'tab active';
+        tabEl.id = `tab-${id}`;
+        tabEl.innerHTML = `<span>新規タブ</span><button onclick="event.stopPropagation(); removeTab(${id})">×</button>`;
         tabEl.onclick = () => switchTab(id);
-        tabsContainer.appendChild(tabEl);
         
-        // Browser View
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('tabs-container').appendChild(tabEl);
+        
         const view = document.createElement('div');
-        view.className = 'view';
+        view.className = 'view active';
         view.id = `view-${id}`;
         view.innerHTML = `
             <div class="toolbar">
                 <input type="text" class="url-bar" placeholder="URLを入力または検索...">
-                <button onclick="loadUrl(${id})">Go</button>
+                <button class="go-btn" onclick="loadProxy(${id})">移動</button>
             </div>
             <div class="home-screen">
-                <h1>Sasuty Proxy v1</h1>
+                <h2>Sasuty Proxy v1</h2>
                 <div class="bookmarks">
-                    <div class="bookmark-item" onclick="quickLoad('${id}', 'https://google.com')">Google</div>
-                    <div class="bookmark-item" onclick="quickLoad('${id}', 'https://youtube.com')">YouTube</div>
+                    <div class="bookmark-item" onclick="quickLoad(${id}, 'https://google.com')">Google</div>
+                    <div class="bookmark-item" onclick="quickLoad(${id}, 'https://youtube.com')">YouTube</div>
+                    <div class="bookmark-item" onclick="quickLoad(${id}, 'https://github.com')">GitHub</div>
                 </div>
             </div>
             <iframe style="display:none"></iframe>
         `;
-        container.appendChild(view);
-        switchTab(id);
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('browser-container').appendChild(view);
     }
 
-    function switchTab(id) {
-        activeTabId = id;
+    window.switchTab = function(id) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(`tab-${id}`).classList.add('active');
         document.getElementById(`view-${id}`).classList.add('active');
     }
 
-    function removeTab(id) {
-        // 実装はシンプルに、必要に応じて拡張してください
+    window.removeTab = function(id) {
+        const tab = document.getElementById(`tab-${id}`);
+        const view = document.getElementById(`view-${id}`);
+        if (document.querySelectorAll('.tab').length > 1) {
+            tab.remove();
+            view.remove();
+            if (document.getElementById(`tab-${id}`)?.classList.contains('active')) {
+                const remainingTabs = document.querySelectorAll('.tab');
+                switchTab(remainingTabs[remainingTabs.length - 1].id.replace('tab-', ''));
+            }
+        }
     }
 
-    function quickLoad(tabId, url) {
-        const view = document.getElementById(`view-${tabId}`);
-        view.querySelector('.url-bar').value = url;
-        loadUrl(tabId);
+    window.quickLoad = function(id, url) {
+        document.getElementById(`view-${id}`).querySelector('.url-bar').value = url;
+        loadProxy(id);
     }
 
-    async function loadUrl(tabId) {
-        const view = document.getElementById(`view-${tabId}`);
-        const url = view.querySelector('.url-bar').value;
+    window.loadProxy = async function(id) {
+        const view = document.getElementById(`view-${id}`);
+        const input = view.querySelector('.url-bar').value;
         const iframe = view.querySelector('iframe');
         const home = view.querySelector('.home-screen');
+
+        await registerSW();
         
-        // ここにUVプロキシのロード処理を接続
-        iframe.src = "/embed#" + url; 
-        iframe.style.display = 'block';
+        if (typeof __uv$config === 'undefined') { alert("Proxy設定が未ロードです"); return; }
+
+        const url = input.startsWith('http') ? input : 'https://google.com/search?q=' + encodeURIComponent(input);
+        iframe.src = __uv$config.prefix + __uv$config.encodeUrl(url);
+        
         home.style.display = 'none';
+        iframe.style.display = 'block';
+        
+        const tab = document.getElementById(`tab-${id}`);
+        tab.querySelector('span').textContent = new URL(url).hostname;
     }
 
-    document.getElementById('add-tab').onclick = createTab;
+    // 初期化
     createTab();
 </script>
 </body>
